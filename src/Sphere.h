@@ -3,6 +3,17 @@
 
 #include <vector>
 #include <glad/glad.h>
+#include "glm/glm.hpp"
+
+struct Particle {
+    glm::vec3 pos,vel,force;
+    float mass = 0.5;
+};
+
+struct Spring {
+    int a, b;
+    float len, k, damping;
+};
 
 class Sphere {
 public:
@@ -10,9 +21,11 @@ public:
     ~Sphere();
 
     void draw(bool isWireframe, GLuint wireframeLoc) const;
+    void UpdateParticle(float dt);
 
 private:
     void build();
+    void AddSpring(int pointA, int pointB, float stiffness, float damping);
 
 private:
     float radius;
@@ -27,6 +40,8 @@ private:
 
     std::vector<float> vertices;
     std::vector<unsigned int> indices;
+    std::vector<Particle> mParticles;
+    std::vector<Spring> mSprings;
 };
 
 #endif

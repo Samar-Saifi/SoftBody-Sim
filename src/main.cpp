@@ -11,7 +11,6 @@
 #include "Camera.h"
 #include "Sphere.h"
 
-
 Camera camera;
 bool   lmbHeld  = false;
 double lastX    = 0.0;
@@ -111,10 +110,8 @@ int main() {
         return -1;
     }
 
-    Sphere sphere(15, 15,15);
-    glEnable(GL_DEPTH_TEST); // ⭐ CRITICAL for 3D
+    glEnable(GL_DEPTH_TEST);
 
-    // ---------- shaders ----------
     std::string vertSrc = readFile("shaders/vert.shader");
     std::string fragSrc = readFile("shaders/frag.shader");
 
@@ -125,14 +122,17 @@ int main() {
     glAttachShader(progID, vert);
     glAttachShader(progID, frag);
     glLinkProgram(progID);
+    Sphere sphere( progID, 5, 15,15);
 
-    // ---------- ground ----------
     float groundVertices[] = {
         -50.0f, 0.0f, -50.0f,
          50.0f, 0.0f, -50.0f,
          50.0f, 0.0f,  50.0f,
         -50.0f, 0.0f,  50.0f
     };
+
+    float lastFrame = glfwGetTime();
+    float deltaTime = 0.0f;
 
     unsigned int groundIndices[] = {
         0, 1, 2,
@@ -165,12 +165,18 @@ int main() {
 
         glUseProgram(progID);
 
+        float currentFrame = glfwGetTime();
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+
+        deltaTime = std::min(deltaTime, 0.016f);
+
         int w, h;
         glfwGetFramebufferSize(window, &w, &h);
         glViewport(0, 0, w, h);
 
         glm::mat4 view = camera.getViewMatrix();
-        float aspect = (winHeight > 0)? (float)w / (float)h : 1.0f;
+        float aspect = (h > 0)? (float)w / (float)h : 1.0f;
 
         glm::mat4 projection = camera.getProjectionMatrix(aspect);
 
@@ -185,11 +191,7 @@ int main() {
 
         Draw(false, wireframeUniformLoc);
 
-        glm::mat4 sphereModel = glm::mat4(1.0f);
-
-        sphereModel = glm::translate(sphereModel,glm::vec3(0.0f, 15.0f, 0.0f));
-
-        glUniformMatrix4fv(glGetUniformLocation(progID, "model"),1,GL_FALSE, glm::value_ptr(sphereModel));
+        sphere.UpdateParticle(deltaTime);
 
         sphere.draw(false, wireframeUniformLoc);
         sphere.draw(true, wireframeUniformLoc);
