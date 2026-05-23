@@ -7,7 +7,7 @@
 
 struct Particle {
     glm::vec3 pos,vel,force;
-    float mass = 0.5;
+    float mass = 1;
 };
 
 struct Spring {

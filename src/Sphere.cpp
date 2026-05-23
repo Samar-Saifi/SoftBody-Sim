@@ -61,22 +61,28 @@ void Sphere::build()
 
         for (int j = 0; j < sectors; ++j, ++k1, ++k2) {
 
-            AddSpring(k1, k1+1, 200, 2);
-            AddSpring(k1, k2, 200, 2);
-
-            AddSpring(k1, k2+1, 120, 1);
-            AddSpring(k1+1, k2, 120, 1);
+            AddSpring(k1, k1+1, 200, 8);
+            AddSpring(k1, k2, 200, 8);
 
             if (i != 0) {
                 indices.push_back(k1);
                 indices.push_back(k2);
-                indices.push_back(k1 + 1);
+                indices.push_back(k2 + 1);
             }
 
-            if (j<sectors - i) {
-                AddSpring(k1, k1+2, 80, 0.6);
-                if (i+2 <= stacks) {
-                    AddSpring(k1, k1 + (2 * (sectors + 1)), 200, 2);
+            if (i > 0 && i < stacks - 1)
+            {
+                AddSpring(k1, k2 + 1, 120.0f, 6);
+                AddSpring(k1 + 1, k2, 120.0f, 6);
+
+                if (j < sectors - 1)
+                {
+                    AddSpring(k1, k1 + 2, 80.0f, 5);
+                }
+
+                if (i < stacks - 2)
+                {
+                    AddSpring(k1, k1 + (2 * (sectors + 1)), 180.0f,7);
                 }
             }
 
@@ -85,6 +91,32 @@ void Sphere::build()
                 indices.push_back(k2);
                 indices.push_back(k2 + 1);
             }
+        }
+    }
+
+    for (int i = 0; i<= stacks; ++i) {
+        int rowStart = i* (sectors + 1);
+        int first = rowStart;
+        int last = rowStart + sectors;
+
+        AddSpring(first, last, 150, 8);
+    }
+
+    {
+        int topPole = 0;
+
+        for (int j = 1; j <= sectors; ++j)
+        {
+            AddSpring(topPole, j, 100.0f, 19);
+        }
+    }
+
+    {
+        int bottomPole = stacks * (sectors + 1);
+
+        for (int j = 1; j <= sectors; ++j)
+        {
+            AddSpring(bottomPole, bottomPole + j, 100.0f, 10);
         }
     }
 
@@ -182,7 +214,6 @@ void Sphere::UpdateParticle(float dt)
         vertices.push_back(p.pos.z);
     }
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferSubData(GL_ARRAY_BUFFER, 0,
-                    vertices.size() * sizeof(float), vertices.data());
+    glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(float), vertices.data());
 
 }
