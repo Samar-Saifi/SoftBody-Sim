@@ -23,9 +23,19 @@ public:
     void draw(bool isWireframe, GLuint wireframeLoc) const;
     void UpdateParticle(float dt);
 
+    int  PickParticle(glm::vec3 rayOrigin, glm::vec3 rayDir, float threshold = 2.0f);
+    void BeginDrag(int particleIdx, glm::vec3 worldTarget);
+    void MoveDrag(glm::vec3 worldTarget);
+    void EndDrag();
+
+    inline glm::vec3 getParticlePos(int idx) const { return mParticles[idx].pos; }
+
+
 private:
     void build();
     void AddSpring(int pointA, int pointB, float stiffness, float damping);
+    float computeVolume() const;
+    void  applyPressureForces(float subDt);
 
 private:
     float radius;
@@ -33,6 +43,14 @@ private:
     int sectors;
     unsigned int progID;
     float groundHeight = 15;
+
+    int mDragIdx = -1;
+    glm::vec3 mDragTarget = {};
+    float mDragK = 600.0f;
+
+    float restVolume = 0.0f;
+    float pressureK = 300.0f;
+    int mFrameCount = 0;
 
     GLuint VAO = 0;
     GLuint VBO = 0;

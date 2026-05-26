@@ -1,5 +1,6 @@
 #include "Sphere.h"
 #include <cmath>
+#include <iostream>
 
 Sphere::Sphere(unsigned int prog, float radius, int stacks, int sectors)
     : radius(radius), stacks(stacks), sectors(sectors), progID(prog)
@@ -13,7 +14,6 @@ void Sphere::AddSpring(int a, int b, float k, float damping)
     for (auto& spring : mSprings)
     {if ((spring.a == a && spring.b == b) || (spring.a == b && spring.b == a)) return;}
     float distance = glm::length((mParticles[a].pos - mParticles[b].pos));
-    if (distance < 1e-9f) return;
     mSprings.push_back({ a, b, distance, k, damping });
 }
 
@@ -64,11 +64,14 @@ void Sphere::build()
             AddSpring(k1, k1+1, 200, 8);
             AddSpring(k1, k2, 200, 8);
 
-            if (i != 0) {
-                indices.push_back(k1);
-                indices.push_back(k2);
-                indices.push_back(k2 + 1);
-            }
+            indices.push_back(k1);
+            indices.push_back(k2);
+            indices.push_back(k2 + 1);
+
+            indices.push_back(k1);
+
+            indices.push_back(k2 + 1);
+            indices.push_back(k1 + 1);
 
             if (i > 0 && i < stacks - 1)
             {
@@ -85,12 +88,6 @@ void Sphere::build()
                     AddSpring(k1, k1 + (2 * (sectors + 1)), 180.0f,7);
                 }
             }
-
-            if (i != (stacks - 1)) {
-                indices.push_back(k1 + 1);
-                indices.push_back(k2);
-                indices.push_back(k2 + 1);
-            }
         }
     }
 
@@ -104,18 +101,14 @@ void Sphere::build()
 
     {
         int topPole = 0;
-
-        for (int j = 1; j <= sectors; ++j)
-        {
+        for (int j = 1; j <= sectors; ++j){
             AddSpring(topPole, j, 100.0f, 19);
         }
     }
 
     {
         int bottomPole = stacks * (sectors + 1);
-
-        for (int j = 1; j <= sectors; ++j)
-        {
+        for (int j = 1; j <= sectors; ++j){
             AddSpring(bottomPole, bottomPole + j, 100.0f, 10);
         }
     }
@@ -141,6 +134,8 @@ void Sphere::build()
     glEnableVertexAttribArray(0);
 
     glBindVertexArray(0);
+
+    restVolume = computeVolume();
 }
 
 void Sphere::draw(bool isWireframe, GLuint wireframeLoc) const
@@ -164,13 +159,59 @@ void Sphere::draw(bool isWireframe, GLuint wireframeLoc) const
     glBindVertexArray(0);
 }
 
+float Sphere::computeVolume() const
+{
+    float vol = 0.0f;
+    for (size_t i = 0; i < indices.size(); i += 3)
+    {
+        const glm::vec3& a = mParticles[indices[i    ]].pos;
+        const glm::vec3& b = mParticles[indices[i + 1]].pos;
+        const glm::vec3& c = mParticles[indices[i + 2]].pos;
+        vol += glm::dot(a, glm::cross(b, c));
+    }
+    return std::abs(vol) / 6.0f;
+}
+
+void Sphere::applyPressureForces(float subDt)
+{
+    float ramp = std::min(mFrameCount / 60.0f, 1.0f);
+    float currentVol = computeVolume();
+    float pressure = pressureK * ramp * (restVolume - currentVol) / restVolume;
+
+    for (size_t i = 0; i < indices.size(); i += 3)
+    {
+        int ia = indices[i], ib = indices[i + 1], ic = indices[i + 2];
+
+        glm::vec3& pa = mParticles[ia].pos;
+        glm::vec3& pb = mParticles[ib].pos;
+        glm::vec3& pc = mParticles[ic].pos;
+
+        glm::vec3 force = pressure * glm::cross(pc - pa, pb - pa) / 3.0f;
+
+        mParticles[ia].vel += (force / mParticles[ia].mass) * subDt;
+        mParticles[ib].vel += (force / mParticles[ib].mass) * subDt;
+        mParticles[ic].vel += (force / mParticles[ic].mass) * subDt;
+    }
+}
+
 void Sphere::UpdateParticle(float dt)
 {
     const int substeps = 20;
     float subDt = dt / substeps;
+    ++mFrameCount;
 
     for (int step = 0; step < substeps; ++step)
     {
+        applyPressureForces(subDt);
+
+        if (mDragIdx >= 0)
+        {
+            Particle& dp = mParticles[mDragIdx];
+            glm::vec3 pull = mDragK * (mDragTarget - dp.pos);
+            dp.vel += (pull / dp.mass) * subDt;
+            dp.vel *= 0.80f;
+        }
+
         for (auto& sp : mSprings)
         {
             glm::vec3 p1 = mParticles[sp.a].pos;
@@ -194,6 +235,7 @@ void Sphere::UpdateParticle(float dt)
         for (auto& p : mParticles)
         {
             p.vel += glm::vec3(0.0f, -9.8f, 0.0f) * subDt;
+            p.vel *= (1.0f - 0.15f * subDt);
             p.pos += p.vel * subDt;
 
             if (p.pos.y < 0.0f) {
@@ -215,5 +257,32 @@ void Sphere::UpdateParticle(float dt)
     }
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(float), vertices.data());
-
 }
+
+int Sphere::PickParticle(glm::vec3 origin, glm::vec3 dir, float threshold)
+{
+    int   best = -1;
+    float bestDist = threshold;
+
+    for (int i = 0; i < (int)mParticles.size(); ++i){
+
+        glm::vec3 toP = mParticles[i].pos - origin;
+        float     t   = glm::dot(toP, dir);
+        if (t < 0.0f) continue;
+
+        float dist = glm::length(mParticles[i].pos - (origin + dir * t));
+        if (dist < bestDist) { bestDist = dist; best = i; }
+    }
+    std::cout << "Picked: " << best << " minDist: " << bestDist << "\n";
+    return best;
+}
+
+void Sphere::BeginDrag(int idx, glm::vec3 target)
+{
+    mDragIdx    = idx;
+    mDragTarget = target;
+}
+
+void Sphere::MoveDrag(glm::vec3 target) { mDragTarget = target; }
+
+void Sphere::EndDrag() { mDragIdx = -1; }
