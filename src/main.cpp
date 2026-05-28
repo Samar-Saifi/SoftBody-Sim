@@ -35,22 +35,10 @@ static std::string readFile(const char* path) {
     return ss.str();
 }
 
-void Draw(bool isWireframe, GLuint wireframeLoc) {
-    glPolygonMode(GL_FRONT_AND_BACK, isWireframe ? GL_LINE : GL_FILL);
-
-    if (!isWireframe) {
-        glEnable(GL_POLYGON_OFFSET_FILL);
-        glPolygonOffset(2.0f, 2.0f);
-    } else {
-        glDisable(GL_POLYGON_OFFSET_FILL);
-    }
-
-    glUniform1i(wireframeLoc, isWireframe);
-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-    if (!isWireframe)
-        glDisable(GL_POLYGON_OFFSET_FILL);
-
+void Draw(GLuint colorLoc) {
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glUniform4f(colorLoc, 0.2f, 0.6f, 0.2f, 1.0f );
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
 
@@ -65,6 +53,7 @@ static unsigned int compileShader(GLenum type, const char* src) {
     if (!success) {
         glGetShaderInfoLog(shader, 512, NULL, log);
         std::cout << "Shader error:\n" << log << std::endl;
+        exit(-1);
     }
     return shader;
 }
@@ -253,16 +242,14 @@ int main() {
 
         glm::mat4 groundModel = glm::mat4(1.0f);
         glUniformMatrix4fv(glGetUniformLocation(progID, "model"), 1, GL_FALSE, glm::value_ptr(groundModel));
-        glUniform3f(glGetUniformLocation(progID, "color"), 0.2f, 0.6f, 0.2f);
         glBindVertexArray(gVAO);
-        GLuint wireframeUniformLoc = glGetUniformLocation(progID, "wireframe");
+        GLuint colorUniformLoc = glGetUniformLocation(progID, "color");
 
-        Draw(false, wireframeUniformLoc);
+        Draw(colorUniformLoc);
 
         sphere.UpdateParticle(deltaTime);
 
-        sphere.draw(false, wireframeUniformLoc);
-        sphere.draw(true, wireframeUniformLoc);
+        sphere.draw(colorUniformLoc);
         glfwSwapBuffers(window);
         glfwPollEvents();
     }

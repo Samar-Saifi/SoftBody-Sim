@@ -146,23 +146,13 @@ void Sphere::build()
     restVolume = computeVolume();
 }
 
-void Sphere::draw(bool isWireframe, GLuint wireframeLoc) const
+void Sphere::draw(GLuint colorUniformLoc) const
 {
     glBindVertexArray(VAO);
-    glPolygonMode(GL_FRONT_AND_BACK, isWireframe ? GL_LINE : GL_FILL);
-    if (!isWireframe) {
-        glEnable(GL_POLYGON_OFFSET_FILL);
-        glPolygonOffset(2.0f, 2.0f);
-    } else {
-        glDisable(GL_POLYGON_OFFSET_FILL);
-    }
-    glUniform1i(wireframeLoc, isWireframe);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glUniform4f(colorUniformLoc, 1, 0.5, 0.5, 1);
 
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()),GL_UNSIGNED_INT,0);
-
-    if (!isWireframe)
-        glDisable(GL_POLYGON_OFFSET_FILL);
-
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glBindVertexArray(0);
 }
@@ -255,6 +245,19 @@ void Sphere::UpdateParticle(float dt)
                 }
             }
         }
+    }
+
+    for (int i = 0; i <= stacks; ++i) {
+        int firstColumnIdx = i * (sectors + 1);          // where j = 0
+        int lastColumnIdx  = firstColumnIdx + sectors;   // where j = sectors
+
+        glm::vec3 sharedPos = (mParticles[firstColumnIdx].pos + mParticles[lastColumnIdx].pos) * 0.5f;
+
+        mParticles[firstColumnIdx].pos = sharedPos;
+        mParticles[lastColumnIdx].pos  = sharedPos;
+        glm::vec3 sharedVel = (mParticles[firstColumnIdx].vel + mParticles[lastColumnIdx].vel) * 0.5f;
+        mParticles[firstColumnIdx].vel = sharedVel;
+        mParticles[lastColumnIdx].vel  = sharedVel;
     }
 
     vertices.clear();

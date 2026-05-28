@@ -22,7 +22,7 @@ public:
     Sphere(unsigned int prog, float radius = 1.0f, int stacks = 20, int sectors = 20);
     ~Sphere();
 
-    void draw(bool isWireframe, GLuint wireframeLoc) const;
+    void draw(GLuint colorUniformLoc) const;
     void UpdateParticle(float dt);
 
     int  PickParticle(glm::vec3 rayOrigin, glm::vec3 rayDir, float threshold = 2.0f);
