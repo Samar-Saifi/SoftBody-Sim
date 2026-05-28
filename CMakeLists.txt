@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+﻿cmake_minimum_required(VERSION 3.15)
 project(Soft_Body)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -13,7 +13,7 @@ FetchContent_Declare(
 
 add_library(glad external/glad/src/glad.c)
 
-file(COPY shaders DESTINATION ${CMAKE_SOURCE_DIR})
+file(COPY shaders DESTINATION ${CMAKE_BINARY_DIR})
 
 target_include_directories(glad PUBLIC
         external/glad/include
@@ -45,4 +45,8 @@ target_link_libraries(Soft_Body
         glfw
 )
 
-
+set_target_properties(Soft_Body PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}"
+)

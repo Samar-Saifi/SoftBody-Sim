@@ -2,6 +2,14 @@
 #include <cmath>
 #include <iostream>
 
+float DAMPING = 40;
+float DAMPING_2 = 80;
+float DAMPING_3 = 50;
+
+float k_1 = 500;
+float k_2 = 800;
+float k_3 = 300;
+
 Sphere::Sphere(unsigned int prog, float radius, int stacks, int sectors)
     : radius(radius), stacks(stacks), sectors(sectors), progID(prog)
 {
@@ -61,8 +69,8 @@ void Sphere::build()
 
         for (int j = 0; j < sectors; ++j, ++k1, ++k2) {
 
-            AddSpring(k1, k1+1, 200, 8);
-            AddSpring(k1, k2, 200, 8);
+            AddSpring(k1, k1+1, k_2, DAMPING_2);
+            AddSpring(k1, k2, k_2, 8);
 
             indices.push_back(k1);
             indices.push_back(k2);
@@ -75,17 +83,17 @@ void Sphere::build()
 
             if (i > 0 && i < stacks - 1)
             {
-                AddSpring(k1, k2 + 1, 120.0f, 6);
-                AddSpring(k1 + 1, k2, 120.0f, 6);
+                AddSpring(k1, k2 + 1, k_1, 6);
+                AddSpring(k1 + 1, k2, k_1, 6);
 
                 if (j < sectors - 1)
                 {
-                    AddSpring(k1, k1 + 2, 80.0f, 5);
+                    AddSpring(k1, k1 + 2, k_3, 5);
                 }
 
                 if (i < stacks - 2)
                 {
-                    AddSpring(k1, k1 + (2 * (sectors + 1)), 180.0f,7);
+                    AddSpring(k1, k1 + (2 * (sectors + 1)), k_3,7);
                 }
             }
         }
@@ -96,26 +104,26 @@ void Sphere::build()
         int first = rowStart;
         int last = rowStart + sectors;
 
-        AddSpring(first, last, 150, 8);
+        AddSpring(first, last, k_2, 8);
     }
 
     {
         int topPole = 0;
         for (int j = 1; j <= sectors; ++j){
-            AddSpring(topPole, j, 100.0f, 19);
+            AddSpring(topPole, j, k_3, 19);
         }
     }
 
     {
         int bottomPole = stacks * (sectors + 1);
         for (int j = 1; j <= sectors; ++j){
-            AddSpring(bottomPole, bottomPole + j, 100.0f, 10);
+            AddSpring(bottomPole, bottomPole + j, k_3, 10);
         }
     }
 
     for (size_t i = 0; i < mParticles.size() / 2; ++i) {
         size_t oppositeIdx = (i + (mParticles.size() / 2)) % mParticles.size();
-        AddSpring(i, oppositeIdx, 150, 1.5);
+        AddSpring(i, oppositeIdx, k_1, 1.5);
     }
 
     glGenVertexArrays(1, &VAO);

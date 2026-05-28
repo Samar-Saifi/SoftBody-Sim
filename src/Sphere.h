@@ -6,8 +6,10 @@
 #include "glm/glm.hpp"
 
 struct Particle {
-    glm::vec3 pos,vel,force;
-    float mass = 1;
+    glm::vec3 pos   = glm::vec3(0.0f);
+    glm::vec3 vel   = glm::vec3(0.0f);
+    glm::vec3 force = glm::vec3(0.0f);
+    float mass      = 1.0f;
 };
 
 struct Spring {
@@ -49,7 +51,7 @@ private:
     float mDragK = 600.0f;
 
     float restVolume = 0.0f;
-    float pressureK = 300.0f;
+    float pressureK = 20000.0f;
     int mFrameCount = 0;
 
     GLuint VAO = 0;
