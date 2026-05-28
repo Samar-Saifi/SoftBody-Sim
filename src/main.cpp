@@ -18,6 +18,8 @@ double lastY    = 0.0;
 int    winWidth  = 1280;
 int    winHeight = 720;
 Sphere* globalSphere = nullptr;
+glm::vec3 lightPosition(10.0f, 20.0f, 10.0f);
+glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
 
 bool rmbHeld = false;
 glm::vec3 dragPlanePoint = {};
@@ -181,10 +183,10 @@ int main() {
     globalSphere = &sphere;
 
     float groundVertices[] = {
-        -50.0f, 0.0f, -50.0f,
-         50.0f, 0.0f, -50.0f,
-         50.0f, 0.0f,  50.0f,
-        -50.0f, 0.0f,  50.0f
+        -50.0f, 0.0f, -50.0f,  0.0f, 1.0f, 0.0f,
+        50.0f, 0.0f, -50.0f,  0.0f, 1.0f, 0.0f,
+        50.0f, 0.0f,  50.0f,  0.0f, 1.0f, 0.0f,
+        -50.0f, 0.0f,  50.0f,  0.0f, 1.0f, 0.0f
     };
 
     float lastFrame = glfwGetTime();
@@ -208,8 +210,12 @@ int main() {
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gEBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(groundIndices), groundIndices, GL_STATIC_DRAW);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
+
+
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3*sizeof(float)));
+    glEnableVertexAttribArray(1);
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -220,6 +226,9 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glUseProgram(progID);
+
+        glUniform3fv(glGetUniformLocation(progID, "lightPos"), 1, glm::value_ptr(lightPosition));
+        glUniform3fv(glGetUniformLocation(progID, "lightColor"), 1, glm::value_ptr(lightColor));
 
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
