@@ -132,18 +132,54 @@ void Sphere::build()
 
     glBindVertexArray(VAO);
 
+    vertices.clear();
+    for (auto& p : mParticles) {
+        vertices.push_back(p.pos.x);
+        vertices.push_back(p.pos.y);
+        vertices.push_back(p.pos.z);
+        vertices.push_back(0.0f);
+        vertices.push_back(1.0f);
+        vertices.push_back(0.0f);
+    }
+
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float),vertices.data(),GL_DYNAMIC_DRAW);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(),GL_DYNAMIC_DRAW);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3* sizeof(float)));
+    glEnableVertexAttribArray(1);
 
     glBindVertexArray(0);
 
     restVolume = computeVolume();
+}
+
+void Sphere::CalculateNormals()
+{
+    for (auto p : mParticles){ p.normal = glm::vec3(0); }
+
+    for (size_t i = 0; i < indices.size(); i+=3)
+    {
+        int a = indices[i]; int b = indices[i + 1]; int c = indices[i + 2];
+        glm::vec3 edge1 = mParticles[b].pos - mParticles[a].pos;
+        glm::vec3 edge2 = mParticles[c].pos - mParticles[a].pos;
+
+        glm::vec3 normal = glm::cross(edge2, edge1);
+        mParticles[a].normal += normal;
+        mParticles[b].normal += normal;
+        mParticles[c].normal += normal;
+    }
+
+    for (auto& p : mParticles) {
+        if (glm::length(p.normal) > 1e-4f) {
+            p.normal = glm::normalize(p.normal);
+        }
+    }
 }
 
 void Sphere::draw(GLuint colorUniformLoc) const
@@ -260,11 +296,17 @@ void Sphere::UpdateParticle(float dt)
         mParticles[lastColumnIdx].vel  = sharedVel;
     }
 
+    CalculateNormals();
+
     vertices.clear();
     for (auto& p : mParticles) {
         vertices.push_back(p.pos.x);
         vertices.push_back(p.pos.y);
         vertices.push_back(p.pos.z);
+
+        vertices.push_back(p.normal.x);
+        vertices.push_back(p.normal.y);
+        vertices.push_back(p.normal.z);
     }
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(float), vertices.data());

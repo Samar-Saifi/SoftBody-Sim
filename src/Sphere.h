@@ -9,6 +9,7 @@ struct Particle {
     glm::vec3 pos   = glm::vec3(0.0f);
     glm::vec3 vel   = glm::vec3(0.0f);
     glm::vec3 force = glm::vec3(0.0f);
+    glm::vec3 normal = glm::vec3(0.0f);
     float mass      = 1.0f;
 };
 
@@ -38,6 +39,7 @@ private:
     void AddSpring(int pointA, int pointB, float stiffness, float damping);
     float computeVolume() const;
     void  applyPressureForces(float subDt);
+    void CalculateNormals();
 
 private:
     float radius;
