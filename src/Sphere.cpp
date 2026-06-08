@@ -2,29 +2,20 @@
 #include <cmath>
 #include <iostream>
 
-float DAMPING = 40;
-float DAMPING_2 = 80;
-float DAMPING_3 = 50;
-
-float k_1 = 500;
-float k_2 = 800;
-float k_3 = 300;
-
 Sphere::Sphere(unsigned int prog, float radius, int stacks, int sectors)
     : radius(radius), stacks(stacks), sectors(sectors), progID(prog)
 {
     build();
 }
 
-void Sphere::AddSpring(int a, int b, float k, float damping)
+void Sphere::AddSpring(int a, int b, float k, float damping, int type)
 {
     if (a == b) return;
     for (auto& spring : mSprings)
     {if ((spring.a == a && spring.b == b) || (spring.a == b && spring.b == a)) return;}
     float distance = glm::length((mParticles[a].pos - mParticles[b].pos));
-    mSprings.push_back({ a, b, distance, k, damping });
+    mSprings.push_back({ a, b, distance, k, damping, type });
 }
-
 Sphere::~Sphere()
 {
     glDeleteVertexArrays(1, &VAO);
@@ -69,8 +60,8 @@ void Sphere::build()
 
         for (int j = 0; j < sectors; ++j, ++k1, ++k2) {
 
-            AddSpring(k1, k1+1, k_2, DAMPING_2);
-            AddSpring(k1, k2, k_2, 8);
+            AddSpring(k1, k1 + 1, k_2, DAMPING_2, 2);
+            AddSpring(k1, k2, k_2, 8.0f, 2);
 
             indices.push_back(k1);
             indices.push_back(k2);
@@ -83,17 +74,18 @@ void Sphere::build()
 
             if (i > 0 && i < stacks - 1)
             {
-                AddSpring(k1, k2 + 1, k_1, 6);
-                AddSpring(k1 + 1, k2, k_1, 6);
+                // Diagonal/Shear Cross-Springs -> Category 1
+                AddSpring(k1, k2 + 1, k_1, 6.0f, 1);
+                AddSpring(k1 + 1, k2, k_1, 6.0f, 1);
 
                 if (j < sectors - 1)
                 {
-                    AddSpring(k1, k1 + 2, k_3, 5);
+                    AddSpring(k1, k1 + 2, k_3, 5.0f, 3);
                 }
 
                 if (i < stacks - 2)
                 {
-                    AddSpring(k1, k1 + (2 * (sectors + 1)), k_3,7);
+                    AddSpring(k1, k1 + (2 * (sectors + 1)), k_3, 7.0f, 3);
                 }
             }
         }
@@ -104,26 +96,26 @@ void Sphere::build()
         int first = rowStart;
         int last = rowStart + sectors;
 
-        AddSpring(first, last, k_2, 8);
+        AddSpring(first, last, k_2, 8.0f, 2);
     }
 
     {
         int topPole = 0;
         for (int j = 1; j <= sectors; ++j){
-            AddSpring(topPole, j, k_3, 19);
+            AddSpring(topPole, j, k_3, 19.0f, 3);
         }
     }
 
     {
         int bottomPole = stacks * (sectors + 1);
         for (int j = 1; j <= sectors; ++j){
-            AddSpring(bottomPole, bottomPole + j, k_3, 10);
+            AddSpring(bottomPole, bottomPole + j, k_3, 10.0f, 3);
         }
     }
 
     for (size_t i = 0; i < mParticles.size() / 2; ++i) {
         size_t oppositeIdx = (i + (mParticles.size() / 2)) % mParticles.size();
-        AddSpring(i, oppositeIdx, k_1, 1.5);
+        AddSpring(i, oppositeIdx, k_1, DAMPING, 1);
     }
 
     glGenVertexArrays(1, &VAO);
@@ -169,7 +161,8 @@ void Sphere::CalculateNormals()
         glm::vec3 edge1 = mParticles[b].pos - mParticles[a].pos;
         glm::vec3 edge2 = mParticles[c].pos - mParticles[a].pos;
 
-        glm::vec3 normal = glm::cross(edge2, edge1);
+        glm::vec3 normal = glm::cross(edge2
+        , edge1);
         mParticles[a].normal += normal;
         mParticles[b].normal += normal;
         mParticles[c].normal += normal;
@@ -178,6 +171,30 @@ void Sphere::CalculateNormals()
     for (auto& p : mParticles) {
         if (glm::length(p.normal) > 1e-4f) {
             p.normal = glm::normalize(p.normal);
+        }
+    }
+}
+
+void Sphere::UpdateSpringParameters()
+{
+    for (auto& spring : mSprings)
+    {
+        switch (spring.springType)
+        {
+        case 1:
+            spring.k = this->k_1;
+            spring.damping = this->DAMPING;
+            break;
+        case 2:
+            spring.k = this->k_2;
+            spring.damping = this->DAMPING_2;
+            break;
+        case 3:
+            spring.k = this->k_3;
+            spring.damping = this->DAMPING_3;
+            break;
+        default:
+            break;
         }
     }
 }
@@ -310,6 +327,22 @@ void Sphere::UpdateParticle(float dt)
     }
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(float), vertices.data());
+}
+
+void Sphere::Rebuild(float newRadius, int newStacks, int newSectors)
+{
+    if (VAO != 0) glDeleteVertexArrays(1, &VAO);
+    if (VBO != 0) glDeleteBuffers(1, &VBO);
+    if (EBO != 0) glDeleteBuffers(1, &EBO);
+
+    this->radius = newRadius;
+    this->stacks = newStacks;
+    this->sectors = newSectors;
+
+    mFrameCount = 0;
+    mDragIdx = -1;
+
+    build();
 }
 
 int Sphere::PickParticle(glm::vec3 origin, glm::vec3 dir, float threshold)

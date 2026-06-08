@@ -16,6 +16,7 @@ struct Particle {
 struct Spring {
     int a, b;
     float len, k, damping;
+    int springType;
 };
 
 class Sphere {
@@ -30,13 +31,25 @@ public:
     void BeginDrag(int particleIdx, glm::vec3 worldTarget);
     void MoveDrag(glm::vec3 worldTarget);
     void EndDrag();
+    void UpdateSpringParameters();
+
+    void Rebuild(float newRadius, int newStacks, int newSectors);
 
     inline glm::vec3 getParticlePos(int idx) const { return mParticles[idx].pos; }
 
 
+public:
+    float DAMPING   = 40.0f;
+    float DAMPING_2 = 80.0f;
+    float DAMPING_3 = 50.0f;
+
+    float k_1 = 500.0f;
+    float k_2 = 800.0f;
+    float k_3 = 300.0f;
+
 private:
     void build();
-    void AddSpring(int pointA, int pointB, float stiffness, float damping);
+    void AddSpring(int pointA, int pointB, float stiffness, float damping, int type);
     float computeVolume() const;
     void  applyPressureForces(float subDt);
     void CalculateNormals();

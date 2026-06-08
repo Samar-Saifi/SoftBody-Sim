@@ -9,7 +9,9 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/type_ptr.hpp"
 #include "Camera.h"
+#include "imgui.h"
 #include "Sphere.h"
+#include "UI.h"
 
 Camera camera;
 bool   lmbHeld  = false;
@@ -167,6 +169,9 @@ int main() {
         return -1;
     }
 
+    UI ui;
+    ui.Initialize(window);
+
     glEnable(GL_DEPTH_TEST);
 
     std::string vertSrc = readFile("shaders/vert.shader");
@@ -179,7 +184,7 @@ int main() {
     glAttachShader(progID, vert);
     glAttachShader(progID, frag);
     glLinkProgram(progID);
-    Sphere sphere( progID, 5, 15,15);
+    Sphere sphere( progID);
     globalSphere = &sphere;
 
     float groundVertices[] = {
@@ -219,31 +224,34 @@ int main() {
     glClearColor(0, 0.59f, 1, 1);
 
     while (!glfwWindowShouldClose(window)) {
-
+        glfwPollEvents();
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
 
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        ui.BeginFrame();
+        ui.Draw(globalSphere);
 
+        float currentFrame = glfwGetTime();
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+        deltaTime = std::min(deltaTime, 0.016f);
+
+        sphere.UpdateParticle(deltaTime);
+
+
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glUseProgram(progID);
 
         glUniform3fv(glGetUniformLocation(progID, "lightPos"), 1, glm::value_ptr(lightPosition));
         glUniform3fv(glGetUniformLocation(progID, "lightColor"), 1, glm::value_ptr(lightColor));
 
-        float currentFrame = glfwGetTime();
-        deltaTime = currentFrame - lastFrame;
-        lastFrame = currentFrame;
-
-        deltaTime = std::min(deltaTime, 0.016f);
-
         int w, h;
         glfwGetFramebufferSize(window, &w, &h);
         glViewport(0, 0, w, h);
-        winWidth  = w; winHeight = h;
+        winWidth = w; winHeight = h;
 
         glm::mat4 view = camera.getViewMatrix();
-        float aspect = (h > 0)? (float)w / (float)h : 1.0f;
-
+        float aspect = (h > 0) ? (float)w / (float)h : 1.0f;
         glm::mat4 projection = camera.getProjectionMatrix(aspect);
 
         glUniformMatrix4fv(glGetUniformLocation(progID, "view"), 1, GL_FALSE, &view[0][0]);
@@ -251,16 +259,15 @@ int main() {
 
         glm::mat4 groundModel = glm::mat4(1.0f);
         glUniformMatrix4fv(glGetUniformLocation(progID, "model"), 1, GL_FALSE, glm::value_ptr(groundModel));
+
         glBindVertexArray(gVAO);
         GLuint colorUniformLoc = glGetUniformLocation(progID, "color");
-
         Draw(colorUniformLoc);
 
-        sphere.UpdateParticle(deltaTime);
-
         sphere.draw(colorUniformLoc);
+
+        ui.EndFrame();
         glfwSwapBuffers(window);
-        glfwPollEvents();
     }
 
     glfwTerminate();
