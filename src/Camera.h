@@ -21,8 +21,9 @@ public:
     glm::mat4 getViewMatrix();
     glm::mat4 getProjectionMatrix(float aspectRatio);
     glm::vec3 getPosition();
-
     void printData();
+    inline float getNearPlane(){return nearPlane;};
+    inline float getFarPlane(){return farPlane;};
 };
 
 

@@ -153,7 +153,7 @@ void Sphere::build()
 
 void Sphere::CalculateNormals()
 {
-    for (auto p : mParticles){ p.normal = glm::vec3(0); }
+    for (auto& p : mParticles){ p.normal = glm::vec3(0); }
 
     for (size_t i = 0; i < indices.size(); i+=3)
     {
@@ -247,7 +247,6 @@ void Sphere::applyPressureForces(float subDt)
 
 void Sphere::UpdateParticle(float dt)
 {
-    const int substeps = 20;
     float subDt = dt / substeps;
     ++mFrameCount;
 

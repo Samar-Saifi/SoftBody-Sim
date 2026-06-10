@@ -47,6 +47,8 @@ public:
     float k_2 = 800.0f;
     float k_3 = 300.0f;
 
+    int substeps = 10;
+
 private:
     void build();
     void AddSpring(int pointA, int pointB, float stiffness, float damping, int type);

@@ -22,6 +22,8 @@ int    winHeight = 720;
 Sphere* globalSphere = nullptr;
 glm::vec3 lightPosition(15.0f, 50.0f, 10.0f);
 glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
+const unsigned int SHADOW_WIDTH = 512;
+const unsigned int SHADOW_HEIGHT = 512;
 
 bool rmbHeld = false;
 glm::vec3 dragPlanePoint = {};
@@ -176,9 +178,42 @@ int main() {
 
     std::string vertSrc = readFile("shaders/vert.shader");
     std::string fragSrc = readFile("shaders/frag.shader");
+    std::string dVert = readFile("shaders/depthVert.shader");
+    std::string dFrag = readFile("shaders/depthFrag.shader");
 
     unsigned int vert = compileShader(GL_VERTEX_SHADER, vertSrc.c_str());
     unsigned int frag = compileShader(GL_FRAGMENT_SHADER, fragSrc.c_str());
+    unsigned int depthVert = compileShader(GL_VERTEX_SHADER, dVert.c_str());
+    unsigned int depthFrag = compileShader(GL_FRAGMENT_SHADER, dFrag.c_str());
+
+    unsigned int depthProgID = glCreateProgram();
+    glAttachShader(depthProgID, depthVert);
+    glAttachShader(depthProgID, depthFrag);
+    glLinkProgram(depthProgID);
+    unsigned int depthMapFBO;
+    glGenFramebuffers(1, &depthMapFBO);
+    unsigned int depthMap;
+    glGenTextures(1, &depthMap);
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
+                 SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cout << "ERROR::FRAMEBUFFER:: Shadow Framebuffer is not complete!" << std::endl;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
 
     unsigned int progID = glCreateProgram();
     glAttachShader(progID, vert);
@@ -222,6 +257,8 @@ int main() {
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3*sizeof(float)));
     glEnableVertexAttribArray(1);
     glClearColor(0, 0.59f, 1, 1);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_FRONT);
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -240,15 +277,43 @@ int main() {
 
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glUseProgram(progID);
-
-        glUniform3fv(glGetUniformLocation(progID, "lightPos"), 1, glm::value_ptr(lightPosition));
-        glUniform3fv(glGetUniformLocation(progID, "lightColor"), 1, glm::value_ptr(lightColor));
 
         int w, h;
         glfwGetFramebufferSize(window, &w, &h);
-        glViewport(0, 0, w, h);
         winWidth = w; winHeight = h;
+
+        glm::mat4 lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, 1.0f, 80.0f);
+        glm::mat4 lightView = glm::lookAt(lightPosition, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 lightMat = lightProjection * lightView;
+
+        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+        glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+        glClear(GL_DEPTH_BUFFER_BIT);
+
+        glUseProgram(depthProgID);
+        glUniformMatrix4fv(glGetUniformLocation(depthProgID, "lightMat"), 1, GL_FALSE, glm::value_ptr(lightMat));
+
+        glm::mat4 groundModel = glm::mat4(1.0f);
+        glUniformMatrix4fv(glGetUniformLocation(depthProgID, "model"), 1, GL_FALSE, glm::value_ptr(groundModel));
+        glBindVertexArray(gVAO);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+        sphere.draw(glGetUniformLocation(depthProgID, "color"));
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        glViewport(0, 0, w, h);
+        glUseProgram(progID);
+
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, depthMap);
+        glUniform1i(glGetUniformLocation(progID, "shadowMap"), 1);
+
+        glUniformMatrix4fv(glGetUniformLocation(progID, "lightMat"), 1, GL_FALSE, glm::value_ptr(lightMat));
+        glUniform3fv(glGetUniformLocation(progID, "viewPos"), 1, glm::value_ptr(camera.getPosition()));
+
+        glUniform3fv(glGetUniformLocation(progID, "lightPos"), 1, glm::value_ptr(lightPosition));
+        glUniform3fv(glGetUniformLocation(progID, "lightColor"), 1, glm::value_ptr(lightColor));
 
         glm::mat4 view = camera.getViewMatrix();
         float aspect = (h > 0) ? (float)w / (float)h : 1.0f;
@@ -257,7 +322,6 @@ int main() {
         glUniformMatrix4fv(glGetUniformLocation(progID, "view"), 1, GL_FALSE, &view[0][0]);
         glUniformMatrix4fv(glGetUniformLocation(progID, "projection"), 1, GL_FALSE, &projection[0][0]);
 
-        glm::mat4 groundModel = glm::mat4(1.0f);
         glUniformMatrix4fv(glGetUniformLocation(progID, "model"), 1, GL_FALSE, glm::value_ptr(groundModel));
 
         glBindVertexArray(gVAO);
