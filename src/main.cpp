@@ -1,25 +1,32 @@
-#include <filesystem>
-#include <fstream>
-#include <glad/glad.h>
 #include <iostream>
-#include <sstream>
+#include <memory>
+#include <algorithm>
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
-#include "glm/glm.hpp"
-#include "glm/gtc/matrix_transform.hpp"
-#include "glm/gtc/type_ptr.hpp"
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <imgui.h>
+
 #include "Camera.h"
-#include "imgui.h"
-#include "Sphere.h"
 #include "UI.h"
+#include "renderer/Renderer.h"
+#include "renderer/Shader.h"
+#include "renderer/VertexArray.h"
+#include "renderer/Buffer.h"
+#include "physics/SoftBody.h"
+#include "physics/SoftBodySphere.h"
+#include "physics/SoftBodyCube.h"
 
 Camera camera;
-bool   lmbHeld  = false;
-double lastX    = 0.0;
-double lastY    = 0.0;
-int    winWidth  = 1280;
-int    winHeight = 720;
-Sphere* globalSphere = nullptr;
+bool lmbHeld = false;
+double lastX = 0.0;
+double lastY = 0.0;
+int winWidth = 1280;
+int winHeight = 720;
+
+std::unique_ptr<SoftBody> globalSoftBody = nullptr;
 glm::vec3 lightPosition(15.0f, 50.0f, 10.0f);
 glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
 const unsigned int SHADOW_WIDTH = 512;
@@ -30,44 +37,9 @@ glm::vec3 dragPlanePoint = {};
 glm::vec3 dragPlaneNormal = {};
 bool isDragging = false;
 
-static std::string readFile(const char* path) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        std::cout << "ERROR: can't open shader file: " << path << std::endl;
-        return "";
-    }
-    std::stringstream ss;
-    ss << file.rdbuf();
-    return ss.str();
-}
-
-void Draw(GLuint colorLoc) {
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-    glUniform4f(colorLoc, 0.2f, 0.6f, 0.2f, 1.0f );
-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-}
-
-
-static unsigned int compileShader(GLenum type, const char* src) {
-    unsigned int shader = glCreateShader(type);
-    glShaderSource(shader, 1, &src, NULL);
-    glCompileShader(shader);
-
-    int success;
-    char log[512];
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        glGetShaderInfoLog(shader, 512, NULL, log);
-        std::cout << "Shader error:\n" << log << std::endl;
-        exit(-1);
-    }
-    return shader;
-}
-
-glm::vec3 getMouseRay(double mx, double my, glm::mat4 view, glm::mat4 proj)
-{
-    float nx = (2.0f * mx) / winWidth  - 1.0f;
-    float ny = 1.0f - (2.0f * my) / winHeight;
+glm::vec3 getMouseRay(double mx, double my, glm::mat4 view, glm::mat4 proj) {
+    float nx = (2.0f * static_cast<float>(mx)) / static_cast<float>(winWidth) - 1.0f;
+    float ny = 1.0f - (2.0f * static_cast<float>(my)) / static_cast<float>(winHeight);
 
     glm::vec4 eyeRay = glm::inverse(proj) * glm::vec4(nx, ny, -1.0f, 1.0f);
     eyeRay = glm::vec4(eyeRay.x, eyeRay.y, -1.0f, 0.0f);
@@ -75,8 +47,7 @@ glm::vec3 getMouseRay(double mx, double my, glm::mat4 view, glm::mat4 proj)
     return glm::normalize(glm::vec3(glm::inverse(view) * eyeRay));
 }
 
-glm::vec3 rayPlaneIntersect(glm::vec3 origin, glm::vec3 dir, glm::vec3 planePoint, glm::vec3 planeNormal)
-{
+glm::vec3 rayPlaneIntersect(glm::vec3 origin, glm::vec3 dir, glm::vec3 planePoint, glm::vec3 planeNormal) {
     float denom = glm::dot(planeNormal, dir);
     if (std::abs(denom) < 1e-6f) return planePoint;
     float t = glm::dot(planePoint - origin, planeNormal) / denom;
@@ -84,119 +55,102 @@ glm::vec3 rayPlaneIntersect(glm::vec3 origin, glm::vec3 dir, glm::vec3 planePoin
 }
 
 void OnMouseClicked(GLFWwindow* window, int button, int action, int mods) {
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureMouse) return;
+
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
         rmbHeld = (action == GLFW_PRESS);
     }
 
-    if (button == GLFW_MOUSE_BUTTON_LEFT && globalSphere)
-    {
-        if (action == GLFW_PRESS)
-        {
+    if (button == GLFW_MOUSE_BUTTON_LEFT && globalSoftBody) {
+        if (action == GLFW_PRESS) {
             lmbHeld = true;
             glm::mat4 view = camera.getViewMatrix();
-            glm::mat4 proj = camera.getProjectionMatrix((float)winWidth / winHeight);
+            glm::mat4 proj = camera.getProjectionMatrix(static_cast<float>(winWidth) / static_cast<float>(winHeight));
 
-            glm::vec3 camPos = glm::vec3(glm::inverse(view)[3]);
-            glm::vec3 ray    = getMouseRay(lastX, lastY, view, proj);
+            glm::vec3 camPos = camera.getPosition();
+            glm::vec3 ray = getMouseRay(lastX, lastY, view, proj);
 
-            int idx = globalSphere->PickParticle(camPos, ray);
-            if (idx >= 0)
-            {
+            int idx = globalSoftBody->PickParticle(camPos, ray);
+            if (idx >= 0) {
                 isDragging = true;
-                dragPlaneNormal = glm::normalize(camPos - globalSphere->getParticlePos(idx));
-                dragPlanePoint  = globalSphere->getParticlePos(idx);
-                globalSphere->BeginDrag(idx, dragPlanePoint);
+                dragPlaneNormal = glm::normalize(camPos - globalSoftBody->GetParticlePos(idx));
+                dragPlanePoint = globalSoftBody->GetParticlePos(idx);
+                globalSoftBody->BeginDrag(idx, dragPlanePoint);
             }
-        }
-        else
-        {
+        } else {
             isDragging = false;
             lmbHeld = false;
-            globalSphere->EndDrag();
+            globalSoftBody->EndDrag();
         }
     }
-
 }
 
 void OnCursorMove(GLFWwindow* window, double x, double y) {
-    float newX = x - lastX;
-    float newY = y - lastY;
-    lastX = x; lastY = y;
+    float newX = static_cast<float>(x - lastX);
+    float newY = static_cast<float>(y - lastY);
+    lastX = x;
+    lastY = y;
 
     if (rmbHeld) {
         camera.RotateCamera(newX, newY);
     }
 
-    if (lmbHeld && globalSphere && isDragging)
-    {
+    if (lmbHeld && globalSoftBody && isDragging) {
         glm::mat4 view = camera.getViewMatrix();
-        glm::mat4 proj = camera.getProjectionMatrix((float)winWidth / winHeight);
-        glm::vec3 camPos = glm::vec3(glm::inverse(view)[3]);
-        glm::vec3 ray    = getMouseRay(x, y, view, proj);
+        glm::mat4 proj = camera.getProjectionMatrix(static_cast<float>(winWidth) / static_cast<float>(winHeight));
+        glm::vec3 camPos = camera.getPosition();
+        glm::vec3 ray = getMouseRay(x, y, view, proj);
 
         glm::vec3 target = rayPlaneIntersect(camPos, ray, dragPlanePoint, dragPlaneNormal);
-        globalSphere->MoveDrag(target);
+        globalSoftBody->MoveDrag(target);
     }
-
 }
 
 void OnMouseScroll(GLFWwindow* window, double xOffset, double yOffset) {
-    camera.ZoomCamera((float)yOffset);
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureMouse) return;
+
+    camera.ZoomCamera(static_cast<float>(yOffset));
 }
 
 int main() {
-    if (!glfwInit())
-        return -1;
+    if (!glfwInit()) return -1;
 
-    std::cout << "CWD: " << std::filesystem::current_path() << std::endl;
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "3D Ground Test", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(winWidth, winHeight, "Soft Body Simulation", nullptr, nullptr);
     if (!window) {
         glfwTerminate();
         return -1;
     }
 
     glfwMakeContextCurrent(window);
-    glfwMakeContextCurrent(window);
     glfwSetMouseButtonCallback(window, OnMouseClicked);
     glfwSetCursorPosCallback(window, OnCursorMove);
     glfwSetScrollCallback(window, OnMouseScroll);
 
-
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-        std::cout << "Failed to init GLAD\n";
+        std::cerr << "Failed to init GLAD\n";
         return -1;
     }
+
+    Renderer::Init();
 
     UI ui;
     ui.Initialize(window);
 
-    glEnable(GL_DEPTH_TEST);
+    Shader mainShader("shaders/vert.shader", "shaders/frag.shader");
+    Shader depthShader("shaders/depthVert.shader", "shaders/depthFrag.shader");
 
-    std::string vertSrc = readFile("shaders/vert.shader");
-    std::string fragSrc = readFile("shaders/frag.shader");
-    std::string dVert = readFile("shaders/depthVert.shader");
-    std::string dFrag = readFile("shaders/depthFrag.shader");
-
-    unsigned int vert = compileShader(GL_VERTEX_SHADER, vertSrc.c_str());
-    unsigned int frag = compileShader(GL_FRAGMENT_SHADER, fragSrc.c_str());
-    unsigned int depthVert = compileShader(GL_VERTEX_SHADER, dVert.c_str());
-    unsigned int depthFrag = compileShader(GL_FRAGMENT_SHADER, dFrag.c_str());
-
-    unsigned int depthProgID = glCreateProgram();
-    glAttachShader(depthProgID, depthVert);
-    glAttachShader(depthProgID, depthFrag);
-    glLinkProgram(depthProgID);
     unsigned int depthMapFBO;
     glGenFramebuffers(1, &depthMapFBO);
     unsigned int depthMap;
     glGenTextures(1, &depthMap);
     glBindTexture(GL_TEXTURE_2D, depthMap);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
-                 SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -210,130 +164,117 @@ int main() {
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
 
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cout << "ERROR::FRAMEBUFFER:: Shadow Framebuffer is not complete!" << std::endl;
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "ERROR: Shadow Framebuffer is not complete!\n";
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-
-    unsigned int progID = glCreateProgram();
-    glAttachShader(progID, vert);
-    glAttachShader(progID, frag);
-    glLinkProgram(progID);
-    Sphere sphere( progID);
-    globalSphere = &sphere;
+    globalSoftBody = std::make_unique<SoftBodySphere>(5.0f, 15, 15);
 
     float groundVertices[] = {
         -50.0f, 0.0f, -50.0f,  0.0f, 1.0f, 0.0f,
-        50.0f, 0.0f, -50.0f,  0.0f, 1.0f, 0.0f,
-        50.0f, 0.0f,  50.0f,  0.0f, 1.0f, 0.0f,
+         50.0f, 0.0f, -50.0f,  0.0f, 1.0f, 0.0f,
+         50.0f, 0.0f,  50.0f,  0.0f, 1.0f, 0.0f,
         -50.0f, 0.0f,  50.0f,  0.0f, 1.0f, 0.0f
     };
-
-    float lastFrame = glfwGetTime();
-    float deltaTime = 0.0f;
-
     unsigned int groundIndices[] = {
         0, 1, 2,
         2, 3, 0
     };
 
-    unsigned int gVAO, gVBO, gEBO;
-    glGenVertexArrays(1, &gVAO);
-    glGenBuffers(1, &gVBO);
-    glGenBuffers(1, &gEBO);
+    auto groundVAO = std::make_shared<VertexArray>();
+    auto groundVBO = std::make_shared<VertexBuffer>(groundVertices, sizeof(groundVertices));
+    auto groundEBO = std::make_shared<IndexBuffer>(groundIndices, 6);
+    std::vector<VertexAttribute> groundAttribs = {
+        { 3, 0 },
+        { 3, 3 * sizeof(float) }
+    };
+    groundVAO->SetBuffer(groundVBO, groundEBO, 6 * sizeof(float), groundAttribs);
 
-    glBindVertexArray(gVAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, gVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(groundVertices), groundVertices, GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gEBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(groundIndices), groundIndices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3*sizeof(float)));
-    glEnableVertexAttribArray(1);
-    glClearColor(0, 0.59f, 1, 1);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_FRONT);
+    float lastFrame = static_cast<float>(glfwGetTime());
+    float deltaTime = 0.0f;
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
             glfwSetWindowShouldClose(window, true);
+        }
 
         ui.BeginFrame();
-        ui.Draw(globalSphere);
+        ui.Draw(globalSoftBody);
 
-        float currentFrame = glfwGetTime();
+        float currentFrame = static_cast<float>(glfwGetTime());
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
         deltaTime = std::min(deltaTime, 0.016f);
 
-        sphere.UpdateParticle(deltaTime);
-
-
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        if (globalSoftBody) {
+            globalSoftBody->UpdatePhysics(deltaTime);
+        }
 
         int w, h;
         glfwGetFramebufferSize(window, &w, &h);
-        winWidth = w; winHeight = h;
+        winWidth = w;
+        winHeight = h;
 
         glm::mat4 lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, 1.0f, 80.0f);
         glm::mat4 lightView = glm::lookAt(lightPosition, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         glm::mat4 lightMat = lightProjection * lightView;
-
-        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+        Renderer::SetViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
         glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-        glClear(GL_DEPTH_BUFFER_BIT);
+        Renderer::ClearDepth();
 
-        glUseProgram(depthProgID);
-        glUniformMatrix4fv(glGetUniformLocation(depthProgID, "lightMat"), 1, GL_FALSE, glm::value_ptr(lightMat));
+        depthShader.Bind();
+        depthShader.SetMat4("lightMat", lightMat);
 
         glm::mat4 groundModel = glm::mat4(1.0f);
-        glUniformMatrix4fv(glGetUniformLocation(depthProgID, "model"), 1, GL_FALSE, glm::value_ptr(groundModel));
-        glBindVertexArray(gVAO);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        depthShader.SetMat4("model", groundModel);
+        Renderer::DrawIndexed(groundVAO);
 
-        sphere.draw(glGetUniformLocation(depthProgID, "color"));
+        if (globalSoftBody) {
+            glm::mat4 bodyModel = glm::mat4(1.0f);
+            depthShader.SetMat4("model", bodyModel);
+            Renderer::DrawIndexed(globalSoftBody->GetVertexArray());
+        }
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-        glViewport(0, 0, w, h);
-        glUseProgram(progID);
+        Renderer::SetViewport(0, 0, winWidth, winHeight);
+        Renderer::Clear(glm::vec4(0.0f, 0.59f, 1.0f, 1.0f));
+        mainShader.Bind();
 
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, depthMap);
-        glUniform1i(glGetUniformLocation(progID, "shadowMap"), 1);
+        mainShader.SetInt("shadowMap", 1);
 
-        glUniformMatrix4fv(glGetUniformLocation(progID, "lightMat"), 1, GL_FALSE, glm::value_ptr(lightMat));
-        glUniform3fv(glGetUniformLocation(progID, "viewPos"), 1, glm::value_ptr(camera.getPosition()));
-
-        glUniform3fv(glGetUniformLocation(progID, "lightPos"), 1, glm::value_ptr(lightPosition));
-        glUniform3fv(glGetUniformLocation(progID, "lightColor"), 1, glm::value_ptr(lightColor));
+        mainShader.SetMat4("lightMat", lightMat);
+        mainShader.SetVec3("viewPos", camera.getPosition());
+        mainShader.SetVec3("lightPos", lightPosition);
+        mainShader.SetVec3("lightColor", lightColor);
 
         glm::mat4 view = camera.getViewMatrix();
-        float aspect = (h > 0) ? (float)w / (float)h : 1.0f;
+        float aspect = (h > 0) ? (static_cast<float>(w) / static_cast<float>(h)) : 1.0f;
         glm::mat4 projection = camera.getProjectionMatrix(aspect);
 
-        glUniformMatrix4fv(glGetUniformLocation(progID, "view"), 1, GL_FALSE, &view[0][0]);
-        glUniformMatrix4fv(glGetUniformLocation(progID, "projection"), 1, GL_FALSE, &projection[0][0]);
+        mainShader.SetMat4("view", view);
+        mainShader.SetMat4("projection", projection);
 
-        glUniformMatrix4fv(glGetUniformLocation(progID, "model"), 1, GL_FALSE, glm::value_ptr(groundModel));
+        mainShader.SetMat4("model", groundModel);
+        mainShader.SetVec4("color", glm::vec4(0.2f, 0.6f, 0.2f, 1.0f));
+        Renderer::DrawIndexed(groundVAO);
 
-        glBindVertexArray(gVAO);
-        GLuint colorUniformLoc = glGetUniformLocation(progID, "color");
-        Draw(colorUniformLoc);
-
-        sphere.draw(colorUniformLoc);
+        if (globalSoftBody) {
+            glm::mat4 bodyModel = glm::mat4(1.0f);
+            mainShader.SetMat4("model", bodyModel);
+            mainShader.SetVec4("color", glm::vec4(1.0f, 0.5f, 0.5f, 1.0f));
+            Renderer::DrawIndexed(globalSoftBody->GetVertexArray());
+        }
 
         ui.EndFrame();
         glfwSwapBuffers(window);
     }
 
+    ui.Shutdown();
     glfwTerminate();
     return 0;
 }

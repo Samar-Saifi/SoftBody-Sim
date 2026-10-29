@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.15)
 project(Soft_Body)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -55,11 +55,30 @@ add_executable(Soft_Body
         src/main.cpp
         src/Camera.cpp
         src/Camera.h
-        src/Sphere.cpp
-        src/Sphere.h
+        src/ShapeConfig.h
         src/UI.cpp
         src/UI.h
-        src/ShapeConfig.h
+        src/collision/Collision.cpp
+        src/collision/Collision.h
+        src/physics/SoftBody.cpp
+        src/physics/SoftBody.h
+        src/physics/SoftBodySphere.cpp
+        src/physics/SoftBodySphere.h
+        src/physics/SoftBodyCube.cpp
+        src/physics/SoftBodyCube.h
+        src/renderer/Buffer.cpp
+        src/renderer/Buffer.h
+        src/renderer/VertexArray.cpp
+        src/renderer/VertexArray.h
+        src/renderer/Shader.cpp
+        src/renderer/Shader.h
+        src/renderer/Renderer.cpp
+        src/renderer/Renderer.h
+)
+
+target_include_directories(Soft_Body PRIVATE
+        src
+        external/glad/include
 )
 
 target_link_libraries(Soft_Body

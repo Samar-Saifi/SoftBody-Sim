@@ -1,23 +1,24 @@
 #ifndef SOFT_BODY_UI_H
 #define SOFT_BODY_UI_H
 
+#include <memory>
 #include "ShapeConfig.h"
+#include "physics/SoftBody.h"
 
-class Sphere;
 struct GLFWwindow;
 
-class UI
-{
+class UI {
 public:
     void Initialize(GLFWwindow* window);
     void BeginFrame();
-    void Draw(Sphere*& globalSphere);
+    void Draw(std::unique_ptr<SoftBody>& activeBody);
     void EndFrame();
     void Shutdown();
 
 private:
-    ShapeType mCurrentSelectedShape = ShapeType::Sphere;
-    SphereConfig mSphereParams;
+    ShapeType m_SelectedShapeType = ShapeType::Sphere;
+    SphereConfig m_SphereConfig;
+    CubeConfig m_CubeConfig;
 };
 
-#endif
+#endif // SOFT_BODY_UI_H
